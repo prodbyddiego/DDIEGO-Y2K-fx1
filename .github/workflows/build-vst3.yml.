@@ -1,0 +1,52 @@
+name: Build VST3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Fetch JUCE
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git juce
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_DIR="$env:GITHUB_WORKSPACE/juce"
+
+      - name: Build VST3
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --target DDIEGO_Y2K_FX_VST3 --parallel
+
+      - name: Locate plugin
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem "$env:GITHUB_WORKSPACE/build" -Recurse -Filter "*.vst3" -Directory | Select-Object -First 1
+          if (-not $plugin) { Write-Error "VST3 was not found." }
+          "PLUGIN_PATH=$($plugin.FullName)" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "Found: $($plugin.FullName)"
+
+      - name: Package VST3
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          Copy-Item "$env:PLUGIN_PATH" artifact -Recurse
+          Compress-Archive artifact/* DDIEGO-Y2K-FX-VST3.zip -Force
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DDIEGO-Y2K-FX-VST3
+          path: DDIEGO-Y2K-FX-VST3.zip
